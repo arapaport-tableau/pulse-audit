@@ -338,8 +338,19 @@
       applyRowUpdate(id, data.row);
       closeModal();
     } catch (err) {
+      // Fetch the Pulse URL so the user can convert manually
+      let pulseUrl = null;
+      try {
+        const urlResp = await fetch(`/pulse_url/${id}`);
+        if (urlResp.ok) pulseUrl = (await urlResp.json()).url;
+      } catch (_) {}
+
       modalError.style.display = 'block';
-      modalError.textContent = String(err);
+      if (pulseUrl) {
+        modalError.innerHTML = `Couldn't convert automatically. <a href="${pulseUrl}" target="_blank" rel="noopener" style="color:#a5b4fc;font-weight:600;">Open in Pulse ↗</a> to make the change there.`;
+      } else {
+        modalError.textContent = String(err);
+      }
       modalConfirm.disabled = false;
       modalCancel.disabled = false;
       modalConfirm.textContent = pendingAction.mode === 'convert' ? 'Convert' : 'Revert';
