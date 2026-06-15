@@ -8,15 +8,16 @@ Companion to [How Pulse Handles Point-in-Time Metrics Now](https://andyrapaport.
 
 ## What it detects
 
-Each Pulse metric on the site lands in one of five buckets:
+Each Pulse metric on the site lands in one of four buckets:
 
 | Bucket | Trigger |
 |---|---|
+| **Convert Candidate** | The measure formula contains an `EXCLUDE` LOD expression — the documented Pulse snapshot workaround |
 | **Already Converted** | `specification.temporality` is already `TEMPORALITY_LATEST_POINT_IN_TIME` |
-| **High Confidence** | Measure was built with the Advanced Definition flow, or the formula contains a `FIXED` / `EXCLUDE` / `INCLUDE` LOD |
-| **Medium Confidence** | Metric name contains a snapshot keyword (balance, headcount, AUM, pipeline, open, active, outstanding, NPL, ...) but no LOD signal |
-| **Not Applicable** | No snapshot signals — likely a flow or rate metric |
-| **Error** | Metadata API permission denied or fetch failed |
+| **Not Applicable** | No `EXCLUDE` LOD found in the measure formula — likely a flow or rate metric |
+| **Error** | Datasource schema could not be fetched (Metadata API permission denied or network failure) |
+
+Detection is formula-based only. Name-based heuristics were removed to eliminate false positives. If a metric's measure field is an Advanced Definition (`Calculation_*`), PulseAudit downloads the datasource to resolve the actual formula.
 
 ## Quick start
 
@@ -60,7 +61,7 @@ A read-only PAT can audit but won't be able to convert. Tick the "Read-only mode
 ## What it does
 
 1. Calls `GET /api/-/pulse/definitions` and pages through every Pulse metric on the site
-2. For each unique datasource, queries the Metadata API to fetch field schemas (parallelized, cached)
+2. For each unique datasource, queries the Metadata API and (for Advanced Definition metrics) downloads the datasource to resolve calculated field formulas. Schema fetches are parallelized and cached per session.
 3. Classifies each metric using the rules above
 4. Renders a filterable table with bucket badges, search, and per-row Convert / Revert actions
 5. Convert clicks fire `PATCH /api/-/pulse/definitions/{id}` with `{"specification": {"temporality": "TEMPORALITY_LATEST_POINT_IN_TIME"}}`
@@ -84,7 +85,8 @@ If you want to host PulseAudit on an internal server for your team:
 - Single site per session. To audit another site, log out and log back in.
 - Bulk convert isn't in MVP. Per-row conversion only.
 - Conversion is not undoable beyond clicking Revert. The CSV export captures pre-conversion temporality so you can track changes.
-- The Metadata API only exposes formulas for **published** datasources. Pulse metrics built on embedded datasources will fall through to name-based classification (Medium Confidence at most).
+- The Metadata API only exposes formulas for published datasources. Metrics built on embedded datasources may fall through to Not Applicable even if they use the LOD workaround.
+- Some metrics may fail to convert via the API with a generic 400 error. In those cases PulseAudit surfaces an "Open in Pulse ↗" link to complete the conversion manually from the Tableau UI.
 
 ## License
 
