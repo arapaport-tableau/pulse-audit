@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PulseAudit · {{ site_name }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+<div class="shell">
+
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="brand">Pulse<span>Audit</span></div>
+      <span class="site-tag">{{ site_name }}</span>
+      <span style="font-size:13px; color:var(--muted);">{{ total }} metric{{ '' if total == 1 else 's' }} audited</span>
+      {% if read_only %}<span class="bucket-badge b-NOT_APPLICABLE">Read-only mode</span>{% endif %}
+    </div>
+    <div class="topbar-right">
+      <a href="{{ url_for('audit', refresh=1) }}" class="btn" id="rerunBtn" onclick="this.textContent='Auditing…';this.style.pointerEvents='none';this.style.opacity='0.6'">Re-run audit</a>
+      <a href="{{ url_for('export_csv') }}" class="btn">Export CSV</a>
+      <button class="btn btn-help" id="helpBtn" onclick="document.getElementById('help-modal').style.display='flex'" aria-label="Help">?</button>
+      <form method="POST" action="{{ url_for('logout') }}" style="display:inline;">
+        <button type="submit" class="btn">Logout</button>
+      </form>
+    </div>
+  </div>
+
+  {% if schema_errors %}
+  <div class="warning-banner">
+    Metadata API failed for {{ schema_errors|length }} datasource{{ '' if schema_errors|length == 1 else 's' }} —
+    formula-based detection unavailable for those. Check PAT permissions.
+  </div>
+  {% endif %}
+
+  <div class="summary-bar" id="bucket-filters">
+    {% for bucket, label in bucket_labels.items() %}
+      {% if counts.get(bucket, 0) > 0 %}
+      <button class="bucket-pill b-{{ bucket }} active" data-bucket="{{ bucket }}">
+        {{ label }}<span class="count">{{ counts.get(bucket, 0) }}</span>
+      </button>
+      {% endif %}
+    {% endfor %}
+  </div>
+
+  <div class="search-row">
+    <input type="search" id="name-search" placeholder="Search by name…" autocomplete="off">
+  </div>
+
+  {% if rows %}
+  <table class="metrics">
+    <thead>
+      <tr>
+        <th>Metric</th>
+        <th>Datasource</th>
+        <th>Measure</th>
+        <th>Bucket</th>
+        <th class="cell-action">Action</th>
+      </tr>
+    </thead>
+    <tbody id="rows">
+      {% for row in rows %}
+      <tr class="row" data-bucket="{{ row.bucket }}" data-name="{{ row.name|lower }}" data-id="{{ row.id }}">
+        <td>
+          <div class="metric-name">{{ row.name }}</div>
+        </td>
+        <td>
+          {% if row.datasource_name %}
+            <div class="ds-name">{{ row.datasource_name }}</div>
+          {% else %}
+            <div class="metric-meta">{{ row.datasource_id[:8] }}…</div>
+          {% endif %}
+        </td>
+        <td>
+          {% if row.measure_caption %}
+            <div class="measure-caption">{{ row.measure_caption }}</div>
+            <div class="metric-meta">{{ row.measure_field }}</div>
+          {% else %}
+            <div class="metric-meta">{{ row.measure_field }}</div>
+          {% endif %}
+          {% if row.aggregation %}
+            <div class="agg-tag">{{ row.aggregation.replace('AGGREGATION_', '') }}</div>
+          {% endif %}
+        </td>
+        <td><span class="bucket-badge b-{{ row.bucket }}">{{ bucket_labels[row.bucket] }}</span></td>
+        <td class="cell-action">
+          {% if not read_only and row.bucket == 'CONVERT_CANDIDATE' %}
+            <button class="btn btn-sm btn-convert convert-btn"
+                    data-id="{{ row.id }}"
+                    data-name="{{ row.name }}"
+                    data-bucket="{{ row.bucket }}">Convert</button>
+          {% else %}
+            <span class="cell-dash">—</span>
+          {% endif %}
+        </td>
+      </tr>
+      <tr class="expand-row" style="display:none;" data-expand-for="{{ row.id }}">
+        <td colspan="5">
+          <div class="expand-meta">
+            <span class="expand-meta-item">ID: {{ row.id[:8] }}…</span>
+            <span class="expand-meta-item">DS: {{ row.datasource_id[:8] }}…</span>
+          </div>
+          <ul class="reasoning-list">
+            {% for line in row.reasoning %}<li>{{ line }}</li>{% endfor %}
+          </ul>
+
+          {% if row.field_type == 'calculated' and row.formula %}
+            <div class="field-label">Formula ({{ row.measure_field }}):</div>
+            <div class="formula">{{ row.formula }}</div>
+          {% elif row.field_type == 'column' %}
+            <div class="field-label">{{ row.measure_field }} is a regular database column — no formula.</div>
+          {% elif row.field_type == 'advanced_definition' %}
+            {% if row.formula %}
+              <div class="field-label">Formula ({{ row.measure_caption or row.measure_field }}):</div>
+              <div class="formula">{{ row.formula }}</div>
+            {% else %}
+              <div class="field-label">Could not download the datasource to inspect the formula — verify in Tableau.</div>
+            {% endif %}
+          {% elif row.field_type == 'unknown' %}
+            <div class="field-label">Measure field type could not be resolved (datasource schema not accessible).</div>
+          {% endif %}
+
+          <div class="expand-actions">
+            <div class="expand-actions-left">
+              <a class="pulse-link" data-defn-id="{{ row.id }}" href="#" target="_blank" rel="noopener">Open in Pulse ↗</a>
+            </div>
+            {% if not read_only and row.bucket == 'ALREADY_CONVERTED' %}
+              <button class="btn btn-sm btn-revert revert-btn" data-id="{{ row.id }}" data-name="{{ row.name }}">Revert to Over time</button>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">No Pulse metrics found on this site.</div>
+  {% endif %}
+
+  <div class="footer">
+    PulseAudit · MIT · <a href="https://andyrapaport.com/article-pit-metrics.html" target="_blank">Read the article</a>
+  </div>
+</div>
+
+<!-- Help modal -->
+<div class="modal-backdrop" id="help-modal" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
+  <div class="modal modal-wide">
+    <div class="modal-header-row">
+      <div class="modal-title">How PulseAudit works</div>
+      <button class="modal-close" onclick="document.getElementById('help-modal').style.display='none'" aria-label="Close">✕</button>
+    </div>
+
+    <div class="help-grid">
+      <div class="help-section">
+        <div class="help-eyebrow">The buckets</div>
+        <div class="help-item">
+          <span class="bucket-badge b-CONVERT_CANDIDATE">Convert Candidate</span>
+          <p>The measure formula contains an EXCLUDE LOD expression — the old snapshot workaround. This metric should be switched to the native Temporality setting.</p>
+        </div>
+        <div class="help-item">
+          <span class="bucket-badge b-ALREADY_CONVERTED">Already Converted</span>
+          <p>Temporality is already set to "Latest point in time." No action needed.</p>
+        </div>
+        <div class="help-item">
+          <span class="bucket-badge b-NOT_APPLICABLE">Not Applicable</span>
+          <p>No EXCLUDE LOD detected. Likely a flow or rate metric — sum behavior is correct.</p>
+        </div>
+      </div>
+
+      <div class="help-section">
+        <div class="help-eyebrow">Reading the table</div>
+        <p>Click any row to expand it. The expand panel shows the classification reasoning and the measure formula so you can confirm the EXCLUDE pattern before converting.</p>
+        <p>Use the bucket pills at the top to filter to just the rows you care about. The search bar filters by metric name.</p>
+        <p>The <strong>Open in Pulse ↗</strong> link in the expand panel takes you directly to the metric in Tableau Cloud.</p>
+      </div>
+
+      <div class="help-section">
+        <div class="help-eyebrow">Converting a metric</div>
+        <p>Click <strong>Convert</strong> on any Convert Candidate row. A confirmation modal explains what will change before anything is written. Review it, then click Confirm.</p>
+        <p>After converting, the row moves to Already Converted and the bucket counts update inline — no page reload.</p>
+      </div>
+
+      <div class="help-section">
+        <div class="help-eyebrow">What subscribers see</div>
+        <p>There is no notification sent to followers when a metric's Temporality changes. The only visible signal is a "Latest Point in Time" badge that appears on the metric card.</p>
+        <p>Period-over-period comparisons and top-contributor insights will change behavior — they now compare end-of-period states instead of sums. If you're converting a high-visibility metric, let your followers know.</p>
+      </div>
+
+      <div class="help-section">
+        <div class="help-eyebrow">Reverting</div>
+        <p>Conversion is reversible. Expand any Already Converted row and click <strong>Revert to Over time</strong> to switch the metric back. The same confirmation flow applies.</p>
+      </div>
+
+      <div class="help-section">
+        <div class="help-eyebrow">Export</div>
+        <p><strong>Export CSV</strong> in the top bar downloads the full audit results — metric name, datasource, measure field, formula, bucket, and current Temporality — for sharing or offline review.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Confirmation modal -->
+<div class="modal-backdrop" id="confirm-modal" style="display:none;">
+  <div class="modal">
+    <div class="modal-title" id="modal-title">Convert metric?</div>
+    <div class="modal-metric" id="modal-metric"></div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-actions">
+      <button class="btn" id="modal-cancel">Cancel</button>
+      <button class="btn btn-primary" id="modal-confirm">Confirm</button>
+    </div>
+    <div class="modal-error" id="modal-error" style="display:none;"></div>
+  </div>
+</div>
+
+<script>
+  // Bucket filter chips
+  const activeBuckets = new Set(
+    Array.from(document.querySelectorAll('.bucket-pill')).map(p => p.dataset.bucket)
+  );
+
+  function applyFilters() {
+    const search = document.getElementById('name-search').value.toLowerCase().trim();
+    document.querySelectorAll('tr.row').forEach(tr => {
+      const bucket = tr.dataset.bucket;
+      const name = tr.dataset.name;
+      const visible = activeBuckets.has(bucket) && (!search || name.includes(search));
+      tr.style.display = visible ? '' : 'none';
+      const expand = document.querySelector(`tr.expand-row[data-expand-for="${tr.dataset.id}"]`);
+      if (expand && !visible) expand.style.display = 'none';
+    });
+  }
+
+  // DOM update: also handle CONVERT_CANDIDATE bucket name
+  const CONVERT_CANDIDATE = 'CONVERT_CANDIDATE';
+
+  document.querySelectorAll('.bucket-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+      const bucket = pill.dataset.bucket;
+      if (activeBuckets.has(bucket)) {
+        activeBuckets.delete(bucket);
+        pill.classList.remove('active');
+      } else {
+        activeBuckets.add(bucket);
+        pill.classList.add('active');
+      }
+      applyFilters();
+    });
+  });
+
+  document.getElementById('name-search').addEventListener('input', applyFilters);
+
+  // Row expand
+  document.querySelectorAll('tr.row').forEach(tr => {
+    tr.addEventListener('click', e => {
+      if (e.target.closest('button')) return; // don't trigger on action click
+      const id = tr.dataset.id;
+      const expand = document.querySelector(`tr.expand-row[data-expand-for="${id}"]`);
+      if (!expand) return;
+      expand.style.display = expand.style.display === 'none' ? '' : 'none';
+    });
+  });
+
+
+  // === Confirmation modal + inline DOM updates ===
+
+  const BUCKET_LABELS = {{ bucket_labels|tojson }};
+  const modal = document.getElementById('confirm-modal');
+  const modalTitle = document.getElementById('modal-title');
+  const modalMetric = document.getElementById('modal-metric');
+  const modalBody = document.getElementById('modal-body');
+  const modalConfirm = document.getElementById('modal-confirm');
+  const modalCancel = document.getElementById('modal-cancel');
+  const modalError = document.getElementById('modal-error');
+
+  let pendingAction = null; // {id, target, btn, mode}
+
+  const CONVERT_BODY = `
+    <p>This metric will switch from <strong>Over time</strong> (the default) to <strong>Latest point in time</strong>. After conversion:</p>
+    <ul>
+      <li>The headline value will reflect the last recorded value, not a sum across the period.</li>
+      <li>Period-over-period and top-contributor insights will compare end-of-period states, not totals.</li>
+      <li>Pace-to-goal will be suppressed (it doesn't apply to snapshots).</li>
+      <li>Subscribers will see the change immediately. There is no notification — only the "Latest Point in Time" badge on the metric card.</li>
+    </ul>
+    <p class="modal-warn">Verify this is the right behavior before continuing. The change is reversible by clicking Revert.</p>`;
+
+  const REVERT_BODY = `
+    <p>This will switch the metric from <strong>Latest point in time</strong> back to <strong>Over time</strong> (cumulative behavior).</p>
+    <p>Headline values, period-over-period comparisons, and other insights will revert to summing across the period. Subscribers will see this change immediately with no notification.</p>`;
+
+  function openModal(action) {
+    pendingAction = action;
+    modalError.style.display = 'none';
+    modalError.textContent = '';
+    if (action.mode === 'convert') {
+      modalTitle.textContent = 'Convert to Latest point in time?';
+      modalConfirm.textContent = 'Convert';
+      modalConfirm.className = 'btn btn-primary';
+      modalBody.innerHTML = CONVERT_BODY;
+    } else {
+      modalTitle.textContent = 'Revert to Over time?';
+      modalConfirm.textContent = 'Revert';
+      modalConfirm.className = 'btn btn-warn';
+      modalBody.innerHTML = REVERT_BODY;
+    }
+    modalMetric.textContent = action.name;
+    modalConfirm.disabled = false;
+    modalCancel.disabled = false;
+    modal.style.display = 'flex';
+  }
+
+  function closeModal() {
+    modal.style.display = 'none';
+    pendingAction = null;
+  }
+
+  modalCancel.addEventListener('click', closeModal);
+  modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && modal.style.display === 'flex') closeModal();
+  });
+
+  modalConfirm.addEventListener('click', async () => {
+    if (!pendingAction) return;
+    const {id, target, btn} = pendingAction;
+    modalConfirm.disabled = true;
+    modalCancel.disabled = true;
+    modalConfirm.textContent = 'Working…';
+    try {
+      const r = await fetch(`/convert/${id}`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({target})
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+      applyRowUpdate(id, data.row);
+      closeModal();
+    } catch (err) {
+      modalError.style.display = 'block';
+      modalError.textContent = String(err);
+      modalConfirm.disabled = false;
+      modalCancel.disabled = false;
+      modalConfirm.textContent = pendingAction.mode === 'convert' ? 'Convert' : 'Revert';
+    }
+  });
+
+  function applyRowUpdate(id, newRow) {
+    const tr = document.querySelector(`tr.row[data-id="${id}"]`);
+    if (!tr || !newRow) return;
+
+    const oldBucket = tr.dataset.bucket;
+    const newBucket = newRow.bucket;
+
+    // Update bucket badge
+    const badge = tr.querySelector('.bucket-badge');
+    badge.className = `bucket-badge b-${newBucket}`;
+    badge.textContent = BUCKET_LABELS[newBucket] || newBucket;
+    tr.dataset.bucket = newBucket;
+
+    // Update action cell
+    const actionCell = tr.querySelector('.cell-action');
+    if (newBucket === 'CONVERT_CANDIDATE') {
+      actionCell.innerHTML = `<button class="btn btn-sm btn-convert convert-btn" data-id="${id}" data-name="${escapeAttr(newRow.name)}" data-bucket="${newBucket}">Convert</button>`;
+    } else {
+      actionCell.innerHTML = '<span class="cell-dash">—</span>';
+    }
+
+    // Update expand row reasoning + revert button
+    const expand = document.querySelector(`tr.expand-row[data-expand-for="${id}"]`);
+    if (expand) {
+      const reasoningList = expand.querySelector('.reasoning-list');
+      if (reasoningList && newRow.reasoning) {
+        reasoningList.innerHTML = newRow.reasoning.map(line => `<li>${escapeHTML(line)}</li>`).join('');
+      }
+      // Replace expand-actions block
+      const actions = expand.querySelector('.expand-actions');
+      if (actions) {
+        const rawToggle = actions.querySelector('.raw-toggle');
+        actions.innerHTML = '';
+        actions.appendChild(rawToggle); // keep original toggle so its handler still works
+        if (newBucket === 'ALREADY_CONVERTED') {
+          const btn = document.createElement('button');
+          btn.className = 'btn btn-sm btn-revert revert-btn';
+          btn.dataset.id = id;
+          btn.dataset.name = newRow.name;
+          btn.textContent = 'Revert to Over time';
+          btn.addEventListener('click', revertHandler);
+          actions.appendChild(btn);
+        }
+      }
+    }
+
+    // Re-attach convert handler if a new convert button was rendered
+    const newConvertBtn = actionCell.querySelector('.convert-btn');
+    if (newConvertBtn) newConvertBtn.addEventListener('click', convertHandler);
+
+    // Update bucket counts at the top
+    updateCount(oldBucket, -1);
+    updateCount(newBucket, +1);
+
+    // Apply current filters in case the row's new bucket is hidden
+    applyFilters();
+  }
+
+  function updateCount(bucket, delta) {
+    const pill = document.querySelector(`.bucket-pill[data-bucket="${bucket}"]`);
+    if (!pill) return;
+    const counter = pill.querySelector('.count');
+    const cur = parseInt(counter.textContent, 10) || 0;
+    counter.textContent = cur + delta;
+  }
+
+  function escapeHTML(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  function escapeAttr(s) {
+    return String(s).replace(/"/g, '&quot;');
+  }
+
+  function convertHandler(e) {
+    e.stopPropagation();
+    const btn = e.currentTarget;
+    openModal({
+      mode: 'convert',
+      id: btn.dataset.id,
+      name: btn.dataset.name,
+      target: 'TEMPORALITY_LATEST_POINT_IN_TIME',
+      btn,
+    });
+  }
+
+  function revertHandler(e) {
+    e.stopPropagation();
+    const btn = e.currentTarget;
+    openModal({
+      mode: 'revert',
+      id: btn.dataset.id,
+      name: btn.dataset.name,
+      target: 'TEMPORALITY_OVER_TIME',
+      btn,
+    });
+  }
+
+  document.querySelectorAll('.convert-btn').forEach(btn => btn.addEventListener('click', convertHandler));
+  document.querySelectorAll('.revert-btn').forEach(btn => btn.addEventListener('click', revertHandler));
+
+  // Lazy-resolve Pulse URL on first click
+  document.querySelectorAll('.pulse-link').forEach(link => {
+    link.addEventListener('click', async e => {
+      if (link.href && link.href !== '#' && !link.href.endsWith('#')) return; // already resolved
+      e.preventDefault();
+      const defnId = link.dataset.defnId;
+      link.textContent = 'Loading…';
+      try {
+        const r = await fetch(`/pulse_url/${defnId}`);
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+        link.href = data.url;
+        link.textContent = 'Open in Pulse ↗';
+        window.open(data.url, '_blank', 'noopener');
+      } catch (err) {
+        link.textContent = 'Could not resolve URL';
+        link.style.color = 'var(--red)';
+      }
+    });
+  });
+</script>
+</body>
+</html>

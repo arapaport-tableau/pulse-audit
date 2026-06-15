@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PulseAudit</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+<div class="login-shell">
+  <div class="login-eyebrow">PulseAudit</div>
+  <h1 class="login-title">Tableau added a native Temporality setting for snapshot metrics.</h1>
+  <p class="login-sub">Snapshot metrics — things like balances, headcount, inventory, or open cases — couldn't be defined natively in Pulse without a workaround. The workaround was an EXCLUDE LOD calculation in the measure field. It works, but it's the hard way.</p>
+  <p class="login-sub">If any of your metrics were built that way, PulseAudit finds them, shows you the formula, and lets you switch to the new Temporality setting in one click.</p>
+
+  {% if error %}
+  <div class="error-box">{{ error }}</div>
+  {% endif %}
+
+  <form method="POST" action="{{ url_for('do_connect') }}" class="login-form">
+    <div class="field">
+      <label for="server_url">Server URL</label>
+      <input type="text" name="server_url" id="server_url" placeholder="prod-uswest-c.online.tableau.com" required autofocus>
+      <span class="hint">The host name of your Tableau Cloud pod.</span>
+    </div>
+    <div class="field">
+      <label for="site_name">Site Content URL</label>
+      <input type="text" name="site_name" id="site_name" placeholder="my-site" required>
+      <span class="hint">The site identifier from the URL (the part after <code>/site/</code>).</span>
+    </div>
+    <div class="field">
+      <label for="pat_name">PAT Name</label>
+      <input type="text" name="pat_name" id="pat_name" required>
+    </div>
+    <div class="field">
+      <label for="pat_secret">PAT Secret</label>
+      <input type="password" name="pat_secret" id="pat_secret" required>
+      <span class="hint">Needs Pulse and Metadata API access. A site admin or owner-of-metric PAT can convert; a read-only PAT can audit.</span>
+    </div>
+    <div class="checkbox-row">
+      <input type="checkbox" name="read_only" id="read_only">
+      <label for="read_only" style="text-transform:none; font-size:13px; color:var(--text); letter-spacing:0;">Read-only mode (hide Convert buttons)</label>
+    </div>
+    <button type="submit" class="btn btn-primary">Sign in</button>
+  </form>
+
+  <div class="footer">
+    Open source · MIT · <a href="https://github.com/arapaport-tableau/pulse-audit" target="_blank">github.com/arapaport-tableau/pulse-audit</a>
+  </div>
+</div>
+</body>
+</html>
